@@ -10,12 +10,14 @@ const app = express();
 
 app.use(cors({
   origin: [
-    "https://vintage-teal.vercel.app",
-    "http://localhost:4000"           
+    "https://vintag.ae", 
+    "https://vintage-teal.vercel.app", 
+    "http://localhost:4000"
   ],
   methods: ["GET", "POST", "PUT", "DELETE"],
   credentials: true
 }));
+
 app.use(express.json());
 
 app.use("/uploads", express.static(path.resolve("uploads")));
