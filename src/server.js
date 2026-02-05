@@ -12,7 +12,8 @@ app.use(cors({
   origin: [
     "https://vintag.ae", 
     "https://vintage-teal.vercel.app", 
-    "http://localhost:4000"
+    "http://localhost:4000",
+    "http://localhost:5173"
   ],
   methods: ["GET", "POST", "PUT", "DELETE"],
   credentials: true
