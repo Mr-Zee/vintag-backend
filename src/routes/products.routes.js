@@ -38,14 +38,14 @@ const upload = multer({
 router.put("/:id", upload.single("image"), async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, material, code, badge } = req.body;
+    const { title, material, code, badge, description } = req.body;
     let imageUrl = req.file ? req.file.location : req.body.image;
 
     const result = await query(
       `UPDATE products 
-       SET title = $1, material = $2, reviews = $3, image = $4, badge = $5 
-       WHERE id = $6 RETURNING *`,
-      [title, material, code, imageUrl, badge, id],
+       SET title = $1, material = $2, reviews = $3, image = $4, badge = $5, description = $6 
+       WHERE id = $7 RETURNING *`,
+      [title, material, code, imageUrl, badge, description, id],
     );
 
     if (result.rows.length === 0) {
@@ -81,15 +81,15 @@ router.post("/", upload.single("image"), async (req, res) => {
 
     const imageUrl = req.file.location; // Permanent S3 URL
 
-    const { title, material, code, badge } = req.body;
+    const { title, material, code, badge, description } = req.body;
 
     const insert = await query(
       `INSERT INTO products 
-        (title, material, reviews, image, badge)
+        (title, material, reviews, image, badge, description)
        VALUES 
-        ($1, $2, $3, $4, $5)
+        ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
-      [title, material, code, imageUrl, badge],
+      [title, material, code, imageUrl, badge, description],
     );
 
     res.json(insert.rows[0]);
