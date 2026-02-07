@@ -7,7 +7,6 @@ import { query } from "../db.js";
 
 const router = express.Router();
 
-// 1. Initialize S3 Client using credentials from .env
 const s3 = new S3Client({
   region: process.env.AWS_REGION,
   credentials: {
@@ -16,7 +15,6 @@ const s3 = new S3Client({
   },
 });
 
-// 2. Configure Multer to stream directly to S3
 const upload = multer({
   storage: multerS3({
     s3: s3,
@@ -73,7 +71,6 @@ router.get("/", async (req, res) => {
   }
 });
 
-// POST create product
 router.post("/", upload.single("image"), async (req, res) => {
   try {
     if (!req.file)
@@ -98,7 +95,6 @@ router.post("/", upload.single("image"), async (req, res) => {
   }
 });
 
-// DELETE product
 router.delete("/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -112,7 +108,6 @@ router.delete("/:id", async (req, res) => {
     if (productResult.rows.length > 0) {
       const imageUrl = productResult.rows[0].image;
 
-      // 2. Extract the S3 Key from the URL
       // URL format: https://bucket-name.s3.region.amazonaws.com/products/123.jpg
       // We need: products/123.jpg
       const urlParts = imageUrl.split(".com/");
@@ -122,7 +117,7 @@ router.delete("/:id", async (req, res) => {
         try {
           const deleteParams = {
             Bucket: process.env.AWS_BUCKET_NAME,
-            Key: decodeURIComponent(s3Key), // decode in case of spaces/special chars
+            Key: decodeURIComponent(s3Key),
           };
           await s3.send(new DeleteObjectCommand(deleteParams));
           console.log("✅ Image deleted from S3:", s3Key);
@@ -133,7 +128,6 @@ router.delete("/:id", async (req, res) => {
       }
     }
 
-    // 3. Delete the record from the Database
     await query("DELETE FROM products WHERE id=$1", [id]);
     res.json({ ok: true, message: "Product and image deleted successfully" });
   } catch (err) {
