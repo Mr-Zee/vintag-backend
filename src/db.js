@@ -1,6 +1,5 @@
 import pkg from 'pg';
 const { Pool } = pkg;
-const { Pool } = require('pg');
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -13,6 +12,11 @@ const pool = new Pool({
 });
 
 export async function query(text, params) {
-  const res = await pool.query(text, params);
-  return res;
+  try {
+    const res = await pool.query(text, params);
+    return res;
+  } catch (error) {
+    console.error("Database Query Error:", error);
+    throw error;
+  }
 }
