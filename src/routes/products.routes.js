@@ -1,11 +1,17 @@
 import express from "express";
 import multer from "multer";
-import path from "path";
-import { S3Client, DeleteObjectCommand } from "@aws-sdk/client-s3";
-import multerS3 from "multer-s3";
+import sharp from 'sharp';
+import { S3Client, DeleteObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { query } from "../db.js";
 
 const router = express.Router();
+
+// 1. Switch to Memory Storage so Sharp can access the file buffer
+const storage = multer.memoryStorage();
+const upload = multer({ 
+  storage,
+  limits: { fileSize: 15 * 1024 * 1024 } 
+});
 
 const s3 = new S3Client({
   region: process.env.AWS_REGION,
@@ -15,29 +21,59 @@ const s3 = new S3Client({
   },
 });
 
-const upload = multer({
-  storage: multerS3({
-    s3: s3,
-    bucket: process.env.AWS_BUCKET_NAME,
-    acl: "public-read",
-    metadata: (req, file, cb) => {
-      cb(null, { fieldName: file.fieldname });
-    },
-    key: (req, file, cb) => {
-      const ext = path.extname(file.originalname || "");
-      const safeName = `products/${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
-      cb(null, safeName);
-    },
-  }),
-  limits: { fileSize: 15 * 1024 * 1024 },
+// Helper function to process and upload to S3
+const processAndUpload = async (file) => {
+  const fileName = `productsdev/${Date.now()}-${Math.round(Math.random() * 1e9)}.webp`;
+  
+  // Convert to WebP using Sharp
+  const webpBuffer = await sharp(file.buffer)
+    .webp({ quality: 80 })
+    .toBuffer();
+
+  // Manual Upload to S3
+  await s3.send(new PutObjectCommand({
+    Bucket: process.env.AWS_BUCKET_NAME,
+    Key: fileName,
+    Body: webpBuffer,
+    ContentType: "image/webp",
+    // ACL: "public-read", // Uncomment if your bucket requires this for public links
+  }));
+
+  return `https://${process.env.AWS_BUCKET_NAME}.s3.${process.env.AWS_REGION}.amazonaws.com/${fileName}`;
+};
+
+// POST: Create product with WebP conversion
+router.post("/", upload.single("image"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: "Image is required" });
+
+    const imageUrl = await processAndUpload(req.file);
+    const { title, material, code, badge, description } = req.body;
+
+    const insert = await query(
+      `INSERT INTO products (title, material, reviews, image, badge, description)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [title, material, code, imageUrl, badge, description],
+    );
+
+    res.json(insert.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to create product", error: err.message });
+  }
 });
 
-// UPDATE product
+// PUT: Update product with WebP conversion
 router.put("/:id", upload.single("image"), async (req, res) => {
   try {
     const { id } = req.params;
     const { title, material, code, badge, description } = req.body;
-    let imageUrl = req.file ? req.file.location : req.body.image;
+    
+    let imageUrl = req.body.image;
+
+    if (req.file) {
+      imageUrl = await processAndUpload(req.file);
+    }
 
     const result = await query(
       `UPDATE products 
@@ -46,9 +82,7 @@ router.put("/:id", upload.single("image"), async (req, res) => {
       [title, material, code, imageUrl, badge, description, id],
     );
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: "Product not found" });
-    }
+    if (result.rows.length === 0) return res.status(404).json({ message: "Product not found" });
 
     res.json(result.rows[0]);
   } catch (err) {
@@ -57,81 +91,42 @@ router.put("/:id", upload.single("image"), async (req, res) => {
   }
 });
 
-// GET all products
+// GET: All products
 router.get("/", async (req, res) => {
   try {
-    const result = await query(
-      "SELECT * FROM products ORDER BY created_at DESC",
-    );
+    const result = await query("SELECT * FROM products ORDER BY created_at DESC");
     res.json(result.rows);
   } catch (err) {
-    res
-      .status(500)
-      .json({ message: "Failed to load products", error: err.message });
+    res.status(500).json({ message: "Failed to load products", error: err.message });
   }
 });
 
-router.post("/", upload.single("image"), async (req, res) => {
-  try {
-    if (!req.file)
-      return res.status(400).json({ message: "Image is required" });
-
-    const imageUrl = req.file.location; // Permanent S3 URL
-
-    const { title, material, code, badge, description } = req.body;
-
-    const insert = await query(
-      `INSERT INTO products 
-        (title, material, reviews, image, badge, description)
-       VALUES 
-        ($1, $2, $3, $4, $5, $6)
-       RETURNING *`,
-      [title, material, code, imageUrl, badge, description],
-    );
-
-    res.json(insert.rows[0]);
-  } catch (err) {
-    res.status(500).json({ message: "Failed to create product", error: err.message });
-  }
-});
-
+// DELETE: Product and S3 Image
 router.delete("/:id", async (req, res) => {
   try {
     const { id } = req.params;
-
-    // 1. Get the image URL from the database before deleting the record
-    const productResult = await query(
-      "SELECT image FROM products WHERE id = $1",
-      [id],
-    );
+    const productResult = await query("SELECT image FROM products WHERE id = $1", [id]);
 
     if (productResult.rows.length > 0) {
       const imageUrl = productResult.rows[0].image;
-
-      // URL format: https://bucket-name.s3.region.amazonaws.com/products/123.jpg
-      // We need: products/123.jpg
-      const urlParts = imageUrl.split(".com/");
-      const s3Key = urlParts[1];
+      const s3Key = imageUrl.split(".com/")[1];
 
       if (s3Key) {
         try {
-          const deleteParams = {
+          await s3.send(new DeleteObjectCommand({
             Bucket: process.env.AWS_BUCKET_NAME,
             Key: decodeURIComponent(s3Key),
-          };
-          await s3.send(new DeleteObjectCommand(deleteParams));
-          console.log("✅ Image deleted from S3:", s3Key);
+          }));
         } catch (s3Err) {
-          console.error("❌ Failed to delete image from S3:", s3Err.message);
-          // We continue anyway so the DB record gets deleted
+          console.error("❌ S3 Delete Failed:", s3Err.message);
         }
       }
     }
 
     await query("DELETE FROM products WHERE id=$1", [id]);
-    res.json({ ok: true, message: "Product and image deleted successfully" });
+    res.json({ ok: true, message: "Deleted successfully" });
   } catch (err) {
-    res.status(500).json({ message: "Failed to delete product", error: err.message });
+    res.status(500).json({ message: "Failed to delete", error: err.message });
   }
 });
 
