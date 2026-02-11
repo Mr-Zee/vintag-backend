@@ -23,7 +23,7 @@ const s3 = new S3Client({
 
 // Helper function to process and upload to S3
 const processAndUpload = async (file) => {
-  const fileName = `productsdev/${Date.now()}-${Math.round(Math.random() * 1e9)}.webp`;
+  const fileName = `products/${Date.now()}-${Math.round(Math.random() * 1e9)}.webp`;
   
   // Convert to WebP using Sharp
   const webpBuffer = await sharp(file.buffer)
