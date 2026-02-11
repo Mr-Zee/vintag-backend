@@ -13,7 +13,7 @@ app.use(cors({
     "https://vintag.ae", 
     "https://vintage-teal.vercel.app", 
     "http://localhost:4000",
-    "http://localhost:5173"
+    "http://localhost:5173" 
   ],
   methods: ["GET", "POST", "PUT", "DELETE"],
   credentials: true

@@ -25,7 +25,7 @@ const upload = multer({
     },
     key: (req, file, cb) => {
       const ext = path.extname(file.originalname || "");
-      const safeName = `products/${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
+      const safeName = `productsdev/${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
       cb(null, safeName);
     },
   }),
